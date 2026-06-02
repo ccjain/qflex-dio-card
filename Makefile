@@ -26,6 +26,8 @@ C_SOURCES = \
   Core/Src/app/relay.c \
   Core/Src/app/feedback.c \
   Core/Src/app/mb_uart.c \
+  Core/Src/app/modbus_rtu.c \
+  Core/Src/app/modbus_app.c \
   $(HAL_DIR)/Src/stm32c0xx_hal.c \
   $(HAL_DIR)/Src/stm32c0xx_hal_cortex.c \
   $(HAL_DIR)/Src/stm32c0xx_hal_dma.c \

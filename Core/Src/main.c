@@ -1,7 +1,10 @@
 #include "main.h"
 #include "heartbeat.h"
 #include "mb_uart.h"
-#include <string.h>
+#include "relay.h"
+#include "feedback.h"
+#include "dip_switch.h"
+#include "modbus_app.h"
 
 static void SystemClock_Config(void);
 
@@ -11,25 +14,34 @@ int main(void)
 {
     HAL_Init();
     SystemClock_Config();
+
+    /* Outputs first so a glitch during init cannot energise a relay. */
+    relay_init();
+    relay_apply();
+
+    feedback_init();
     heartbeat_init(HEARTBEAT_NORMAL);
     mb_uart_init();
 
-    while (1) {
-        heartbeat_tick();
+    uint8_t slave_id = dip_switch_read();
+    if (slave_id == 0u) {
+        /* Config error: ignore Modbus, fast-blink heartbeat forever. */
+        heartbeat_set_mode(HEARTBEAT_FAULT);
+        while (1) { heartbeat_tick(); }
+    }
 
-        size_t rx_len;
-        if (mb_uart_rx_ready(&rx_len)) {
-            /* Snapshot then release so the next request can arrive
-             * while we transmit. */
-            uint8_t scratch[APP_MODBUS_FRAME_BUF];
-            size_t n = (rx_len < sizeof(scratch)) ? rx_len : sizeof(scratch);
-            memcpy(scratch, mb_uart_rx_buffer(), n);
-            mb_uart_rx_release();
-            mb_uart_send(scratch, n);
-        }
+    modbus_app_init(slave_id);
+
+    while (1) {
+        feedback_scan();
+        relay_apply();
+        modbus_app_poll();
+        heartbeat_tick();
     }
 }
 
+/* HSI 48 MHz internal RC -> SYSCLK = HCLK = PCLK = 48 MHz.
+ * STM32C0 has no PLL, so HSI direct (HSIDiv = 1) is the simplest 48 MHz path. */
 static void SystemClock_Config(void)
 {
     RCC_OscInitTypeDef osc = {0};
