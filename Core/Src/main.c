@@ -1,6 +1,7 @@
 #include "main.h"
 #include "heartbeat.h"
 #include "mb_uart.h"
+#include <string.h>
 
 static void SystemClock_Config(void);
 
@@ -13,19 +14,22 @@ int main(void)
     heartbeat_init(HEARTBEAT_NORMAL);
     mb_uart_init();
 
-    uint32_t last = HAL_GetTick();
     while (1) {
         heartbeat_tick();
-        if (HAL_GetTick() - last >= 1000) {
-            last = HAL_GetTick();
-            const uint8_t ping = 'P';
-            mb_uart_tx_blocking(&ping, 1);
+
+        size_t rx_len;
+        if (mb_uart_rx_ready(&rx_len)) {
+            /* Snapshot then release so the next request can arrive
+             * while we transmit. */
+            uint8_t scratch[APP_MODBUS_FRAME_BUF];
+            size_t n = (rx_len < sizeof(scratch)) ? rx_len : sizeof(scratch);
+            memcpy(scratch, mb_uart_rx_buffer(), n);
+            mb_uart_rx_release();
+            mb_uart_send(scratch, n);
         }
     }
 }
 
-/* HSI 48 MHz internal RC -> SYSCLK = HCLK = PCLK = 48 MHz.
- * STM32C0 has no PLL, so HSI direct (HSIDiv = 1) is the simplest 48 MHz path. */
 static void SystemClock_Config(void)
 {
     RCC_OscInitTypeDef osc = {0};
