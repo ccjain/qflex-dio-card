@@ -80,7 +80,7 @@ typedef struct {
 #define PIN_UART_TX_PIN        GPIO_PIN_10
 #define PIN_UART_RX_PORT       GPIOB
 #define PIN_UART_RX_PIN        GPIO_PIN_11
-#define PIN_UART_AF            GPIO_AF4_USART3
+#define PIN_UART_AF            GPIO_AF8_USART3
 #define PIN_UART_CLK_EN()      __HAL_RCC_USART3_CLK_ENABLE()
 
 #define PIN_RS485_DE_PORT      GPIOB
