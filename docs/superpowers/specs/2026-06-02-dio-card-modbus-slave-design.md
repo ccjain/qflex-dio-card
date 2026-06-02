@@ -186,12 +186,14 @@ main()
 
 No FreeRTOS. A 1 ms SysTick drives soft timers used by `feedback_scan`, `heartbeat_tick`, and Modbus framing.
 
-### 5.2 Modbus transport — USART3 + DMA + DE/RE
+### 5.2 Modbus transport — USART3 + RXNE/IDLE interrupt + DE/RE
 
-- **RX path:** `HAL_UARTEx_ReceiveToIdleDMA()` parks DMA on the RX line. The HAL's idle-line callback (`HAL_UARTEx_RxEventCallback`) fires after **1 character time of bus silence** (USART_IDLE flag) → that delimits a Modbus RTU frame. The frame buffer (256 bytes — comfortably larger than any legal Modbus PDU) and a `frame_ready` flag are exposed for `modbus_app_poll()`. We process one frame at a time, so a single buffer is sufficient; DMA is rearmed only after the frame has been consumed.
-- **TX path:** `mb_uart_send()` raises DE/RE (PB2=1), calls `HAL_UART_Transmit_IT()`, and the TX-complete ISR drops DE/RE back to RX mode (PB2=0). The Modbus app layer calls this after building each response frame.
+> **Bring-up note.** `HAL_UART_Init` does not bring USART3 fully online on STM32C092 with CubeC0 v1.4.0 (the same configuration applied via direct register writes works correctly). The transport therefore uses a hand-written register-level init for USART3 itself, and HAL only for GPIO / RCC / NVIC / SysTick. See the Phase D commits in git for the full debug trail.
 
-This gives us Modbus RTU framing essentially for free: USART idle (1 char) ≥ T1.5 inter-character timeout, and the application's own pacing between request/response cycles delivers the T3.5 inter-frame silence. The Modbus protocol layer (`modbus_rtu.c`, §5.3) validates CRC and frame length on every received PDU.
+- **RX path:** USART3 `RXNE_RXFNE` and `IDLE` interrupts (no DMA). Each `RXNE` fires for every received byte and stashes it into a 256-byte frame buffer. `IDLE` fires after **1 character time of bus silence** (~1.146 ms at 9600 8N1) and latches the buffer as a complete frame for `modbus_app_poll()` to consume. At 9600 baud the per-byte interrupt rate is at most ~960/s, comfortably trivial on a 48 MHz Cortex-M0+.
+- **TX path:** `mb_uart_send()` raises DE/RE (PB2=1), polls TXE for each byte, waits for the TC (transmission complete) flag, then drops DE/RE (PB2=0). Polled rather than interrupt-driven because Modbus is half-duplex — there is never more than one response in flight and `mb_uart_send` is only called from the super-loop.
+
+USART idle = 1 char (1.146 ms) is below the strict Modbus T1.5 inter-character timeout (1.72 ms) but well above T3.5 inter-frame silence (4.01 ms divided across the request/response gap). In practice every Modbus master leaves much more than T3.5 between frames, so the simple "idle → frame done" rule is correct. The protocol layer (`modbus_rtu.c`, §5.3) validates CRC and length on every PDU before dispatching.
 
 ### 5.3 Module boundaries
 
