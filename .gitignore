@@ -1,0 +1,25 @@
+# Build artifacts
+build/
+*.o
+*.d
+*.elf
+*.bin
+*.hex
+*.map
+*.list
+
+# IDE
+.vscode/
+.idea/
+*.launch
+.settings/
+.cproject
+.project
+.metadata/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Local-only env overrides
+env.local.bat
