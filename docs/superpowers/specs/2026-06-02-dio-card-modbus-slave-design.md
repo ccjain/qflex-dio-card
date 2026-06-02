@@ -27,7 +27,7 @@ Out of scope for v1 (explicitly): R8 (optional, not populated on this board buil
 | Item | Value |
 |---|---|
 | MCU | STM32C092CBTX (ARM Cortex-M0+, 48 MHz, 256 KB Flash / 30 KB RAM, LQFP-48) |
-| HSE | 8 MHz crystal on PF0/PF1 → PLL → 48 MHz SYSCLK |
+| SYSCLK | HSI 48 MHz internal RC (STM32C0 has no PLL). HSE 8 MHz crystal is populated on the board but **unused in v1** — kept for low-drift / EMI-compliance fallback. |
 | LSE | 32.768 kHz crystal on PC14/PC15 — **present, unused in v1** |
 | Debug | SWD on PA13 (SWDIO) / PA14 (SWCLK, also BOOT0) |
 | Transceiver | RS-485 half-duplex with DE/RE on a single GPIO (PB2) |
@@ -113,6 +113,7 @@ Switch closed → pin reads 0 → firmware interprets that bit as `1`.
 | Pin(s) | Original label | Firmware treatment |
 |---|---|---|
 | PA0-PA4, PA6, PA7 | Vacant on schematic | Initialized as analog input (lowest leakage). |
+| PF0, PF1 | 8 MHz HSE crystal pads | Left at reset state (analog input) — HSE not used in v1. |
 | PA5 | CAN_STBY | GPIO_OUT push-pull, init HIGH (CAN transceiver in standby — CAN unused in v1). |
 | PB0 / PB1 | CAN_RX / CAN_TX | Left at HAL reset state (analog input). |
 | PB12 | Was labeled RELAY12 in the pin-map sheet, not populated | Analog input. |
@@ -169,7 +170,7 @@ Switch closed → pin reads 0 → firmware interprets that bit as `1`.
 ```
 main()
 ├── HAL_Init()
-├── SystemClock_Config()           // HSE → PLL → 48 MHz
+├── SystemClock_Config()           // HSI 48 MHz (no PLL on STM32C0)
 ├── MX_GPIO_Init()                 // relays HIGH, DE/RE LOW, inputs as IN w/ PU
 ├── MX_USART3_UART_Init()          // 9600 8N1, DMA RX, IT TX-complete
 ├── slave_id = dip_switch_read()

@@ -124,14 +124,18 @@ Expected: a commit on `main` containing those files. Verify with `git log --onel
 
 The Modbus stack is in-tree (Tasks 15-17), so the only third-party dependency is ST's HAL/CMSIS package.
 
-- [ ] **Step 1: Add STM32CubeC0 submodule**
+- [ ] **Step 1: Add STM32CubeC0 submodule (selective init)**
+
+STM32CubeC0 itself contains many nested submodules (Nucleo BSPs, ThreadX/USBX/FileX middlewares, mbed-crypto) we don't need. Pull only the HAL driver and CMSIS device:
 
 ```powershell
 git submodule add https://github.com/STMicroelectronics/STM32CubeC0.git external/STM32CubeC0
-git submodule update --init --recursive
+cd external/STM32CubeC0
+git submodule update --init Drivers/STM32C0xx_HAL_Driver Drivers/CMSIS/Device/ST/STM32C0xx
+cd ../..
 ```
 
-Expected: ~600 MB cloned under `external/STM32CubeC0/`. Verify these paths exist:
+(A full `--recursive` would pull ~600 MB. The selective form keeps us under 50 MB.) Verify these paths exist:
 
 ```
 external/STM32CubeC0/Drivers/STM32C0xx_HAL_Driver/Src/stm32c0xx_hal.c
