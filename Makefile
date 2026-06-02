@@ -24,6 +24,7 @@ C_SOURCES = \
   Core/Src/app/heartbeat.c \
   Core/Src/app/dip_switch.c \
   Core/Src/app/relay.c \
+  Core/Src/app/feedback.c \
   $(HAL_DIR)/Src/stm32c0xx_hal.c \
   $(HAL_DIR)/Src/stm32c0xx_hal_cortex.c \
   $(HAL_DIR)/Src/stm32c0xx_hal_dma.c \
