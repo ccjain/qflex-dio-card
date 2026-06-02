@@ -7,7 +7,7 @@
 **Architecture:** Bare-metal super-loop on STM32 HAL. USART3 transports Modbus RTU via idle-line DMA RX + interrupt TX with a GPIO DE/RE around each TX. Slave ID read once at boot from a 4-DIP switch. An in-tree Modbus RTU protocol layer (`modbus_rtu.c` — CRC16, frame validation, FC dispatch, exception responses) is wired to application FC handlers in `modbus_app.c` that talk to the `relay` and `feedback` modules. The protocol layer has no hardware dependencies and is fully covered by host-side unit tests. STM32CubeC0 is vendored as a git submodule; no CubeMX GUI dance.
 
 **Tech Stack:**
-- MCU: STM32C092CBTX (Cortex-M0+ @ 48 MHz, 256 KB Flash / 30 KB RAM)
+- MCU: STM32C092CBTX (Cortex-M0+ @ 48 MHz, 128 KB Flash / 30 KB RAM — `CB` suffix = 128 KB)
 - Toolchain: `arm-none-eabi-gcc 13.3.1` bundled with STM32CubeIDE 1.19.0 (`C:\ST\STM32CubeIDE_1.19.0\...`)
 - Build: hand-written `Makefile` driven by `make.exe` bundled with CubeIDE
 - Flash: `STM32_Programmer_CLI.exe` over SWD (ST-LINK)
@@ -167,7 +167,7 @@ Verify: `git log --oneline -2` shows the commit; `git submodule status` shows th
 
 - [ ] **Step 1: Write the linker script**
 
-The STM32C092CBTX has 256 KB Flash starting at 0x08000000 and 30 KB SRAM starting at 0x20000000 (from datasheet RM0490). Write `Linker/STM32C092CBTX_FLASH.ld`:
+The STM32C092CBTX has 128 KB Flash starting at 0x08000000 and 30 KB SRAM starting at 0x20000000 (from datasheet — `CB` suffix encodes 128 KB; `CC` is the 256 KB variant). Write `Linker/STM32C092CBTX_FLASH.ld`:
 
 ```ld
 /* Linker script for STM32C092CBTX

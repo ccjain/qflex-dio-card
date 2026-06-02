@@ -1,4 +1,5 @@
 #include "main.h"
+#include "heartbeat.h"
 
 static void SystemClock_Config(void);
 
@@ -8,8 +9,10 @@ int main(void)
 {
     HAL_Init();
     SystemClock_Config();
+    heartbeat_init(HEARTBEAT_NORMAL);
+
     while (1) {
-        /* peripherals next task */
+        heartbeat_tick();
     }
 }
 

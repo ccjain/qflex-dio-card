@@ -26,7 +26,7 @@ Out of scope for v1 (explicitly): R8 (optional, not populated on this board buil
 
 | Item | Value |
 |---|---|
-| MCU | STM32C092CBTX (ARM Cortex-M0+, 48 MHz, 256 KB Flash / 30 KB RAM, LQFP-48) |
+| MCU | STM32C092CBTX (ARM Cortex-M0+, 48 MHz, **128 KB Flash** / 30 KB RAM, LQFP-48). The `CB` suffix encodes 128 KB; `CC` would be 256 KB. |
 | SYSCLK | HSI 48 MHz internal RC (STM32C0 has no PLL). HSE 8 MHz crystal is populated on the board but **unused in v1** — kept for low-drift / EMI-compliance fallback. |
 | LSE | 32.768 kHz crystal on PC14/PC15 — **present, unused in v1** |
 | Debug | SWD on PA13 (SWDIO) / PA14 (SWCLK, also BOOT0) |

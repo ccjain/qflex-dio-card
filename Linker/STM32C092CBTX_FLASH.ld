@@ -1,5 +1,5 @@
 /* Linker script for STM32C092CBTX
- * Flash: 256 KB @ 0x08000000
+ * Flash: 128 KB @ 0x08000000 (STM32C092**CB** => 128 KB; CC would be 256 KB)
  * RAM  : 30  KB @ 0x20000000
  * Stack: 4   KB at top of RAM (grows down)
  * Heap : disabled (bare-metal, no malloc)
@@ -13,7 +13,7 @@ _Min_Stack_Size = 0x1000;                /* 4 KB stack */
 
 MEMORY
 {
-  FLASH (rx)  : ORIGIN = 0x08000000, LENGTH = 256K
+  FLASH (rx)  : ORIGIN = 0x08000000, LENGTH = 128K
   RAM   (xrw) : ORIGIN = 0x20000000, LENGTH = 30K
 }
 

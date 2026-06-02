@@ -21,6 +21,7 @@ C_SOURCES = \
   Core/Src/stm32c0xx_it.c \
   Core/Src/stm32c0xx_hal_msp.c \
   Core/Src/system_stm32c0xx.c \
+  Core/Src/app/heartbeat.c \
   $(HAL_DIR)/Src/stm32c0xx_hal.c \
   $(HAL_DIR)/Src/stm32c0xx_hal_cortex.c \
   $(HAL_DIR)/Src/stm32c0xx_hal_dma.c \
