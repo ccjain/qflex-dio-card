@@ -1,5 +1,6 @@
 #include "main.h"
 #include "heartbeat.h"
+#include "mb_uart.h"
 
 static void SystemClock_Config(void);
 
@@ -10,9 +11,16 @@ int main(void)
     HAL_Init();
     SystemClock_Config();
     heartbeat_init(HEARTBEAT_NORMAL);
+    mb_uart_init();
 
+    uint32_t last = HAL_GetTick();
     while (1) {
         heartbeat_tick();
+        if (HAL_GetTick() - last >= 1000) {
+            last = HAL_GetTick();
+            const uint8_t ping = 'P';
+            mb_uart_tx_blocking(&ping, 1);
+        }
     }
 }
 
