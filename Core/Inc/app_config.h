@@ -1,0 +1,17 @@
+#ifndef APP_CONFIG_H
+#define APP_CONFIG_H
+
+#define APP_RELAY_COUNT       7
+#define APP_FEEDBACK_COUNT   12
+#define APP_DIP_BIT_COUNT     4
+
+#define APP_MODBUS_BAUD       9600u
+#define APP_MODBUS_FRAME_BUF  256u
+
+#define APP_HEARTBEAT_NORMAL_MS    500u
+#define APP_HEARTBEAT_FAULT_MS     100u
+
+#define APP_FEEDBACK_SCAN_PERIOD_MS  5u
+#define APP_FEEDBACK_DEBOUNCE_N      3u
+
+#endif
