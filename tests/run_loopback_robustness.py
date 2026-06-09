@@ -247,15 +247,48 @@ def _do_half(ser: serial.Serial, cfg: PortConfig, frames: dict[str, bytes],
     return True
 
 
+def _percentile(xs: list[float], p: float) -> float:
+    """Linear-interpolation percentile over a sorted copy of xs."""
+    if not xs:
+        return 0.0
+    s = sorted(xs)
+    if len(s) == 1:
+        return s[0]
+    k = (len(s) - 1) * p / 100.0
+    lo = int(k)
+    hi = min(lo + 1, len(s) - 1)
+    return s[lo] + (s[hi] - s[lo]) * (k - lo)
+
+
+def summarise(label: str, samples: list[float]) -> str:
+    if not samples:
+        return f"{label}: (no samples)"
+    return (f"{label} ms  min={min(samples):.2f}  "
+            f"mean={statistics.fmean(samples):.2f}  "
+            f"max={max(samples):.2f}  "
+            f"p95={_percentile(samples, 95):.2f}  "
+            f"p99={_percentile(samples, 99):.2f}")
+
+
 def run_loop(ser: serial.Serial, cfg: PortConfig,
              frames: dict[str, bytes]) -> RunResult:
     result = RunResult()
+    t_start = time.perf_counter()
     for i in range(cfg.iters):
         if not _do_half(ser, cfg, frames, on=True,  result=result, iter_idx=i):
             return result
         if not _do_half(ser, cfg, frames, on=False, result=result, iter_idx=i):
             return result
         result.iters_completed = i + 1
+        if (i + 1) % 10 == 0 or (i + 1) == cfg.iters:
+            last_w = result.write_ms[-1] if result.write_ms else 0
+            last_r = result.read_ms[-1]  if result.read_ms  else 0
+            print(f"  iter {i+1:>5}/{cfg.iters} | ok | "
+                  f"last write={last_w:5.2f}ms read={last_r:5.2f}ms",
+                  end="\r")
+    elapsed = time.perf_counter() - t_start
+    print()  # newline after the \r-overwritten progress line
+    print(f"  total runtime: {elapsed:.1f}s")
     return result
 
 
@@ -277,15 +310,25 @@ def main(argv: list[str]) -> int:
             force_relays_off(ser, frames)
             return 130   # conventional exit code for SIGINT
         if result.failure:
-            print(f"FAIL at iter {result.failure['iter']} "
-                  f"{result.failure['half']}-half {result.failure['phase']}: "
-                  f"cat={result.failure['cat']}")
-            print(f"  expected: {result.failure['expected'].hex(' ').upper()}")
-            print(f"  actual  : {result.failure['rx'].hex(' ').upper()}")
+            f = result.failure
+            print(f"=== loopback FAIL @ iter {f['iter']}, {f['half']}-half, "
+                  f"{f['phase']}: cat={f['cat']} ===")
+            print(f"  expected: {f['expected'].hex(' ').upper()}")
+            print(f"  actual  : {f['rx'].hex(' ').upper()}")
+            if (f['phase'] == "read"
+                    and len(f['rx']) >= len(f['expected'])
+                    and f['cat'] in ("wrong_data", "wrong_crc")):
+                bad = per_bit_diff(f['rx'][3:5], f['expected'][3:5])
+                if bad:
+                    names = ", ".join(f"FB{i+1}" for i in bad)
+                    print(f"  mismatched bits: {names}")
             force_relays_off(ser, frames)
             return 1
         force_relays_off(ser, frames)
-        print(f"PASS: {result.iters_completed} iters completed")
+        print(f"\n=== loopback PASS ({result.iters_completed} iters, "
+              f"{2*result.iters_completed} actuations) ===")
+        print("  " + summarise("write latency", result.write_ms))
+        print("  " + summarise("read  latency", result.read_ms))
         return 0
     finally:
         ser.close()
