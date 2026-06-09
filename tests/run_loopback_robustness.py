@@ -65,8 +65,45 @@ def _self_test() -> None:
     print("CRC self-test passed.")
 
 
-if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "--self-test":
+# ---------------------------------------------------------------------------
+# Configuration and CLI parsing
+# ---------------------------------------------------------------------------
+@dataclass
+class PortConfig:
+    port: str = "COM5"
+    slave: int = 8
+    iters: int = 1000
+    baud: int = 9600
+    resp_timeout: float = 0.2     # per-frame read timeout
+    settle_ms: int = 100          # gap between write and read
+
+
+def parse_args(argv: list[str]) -> PortConfig:
+    cfg = PortConfig()
+    if len(argv) > 1:
+        cfg.port = argv[1]
+    if len(argv) > 2:
+        cfg.slave = int(argv[2])
+    if len(argv) > 3:
+        cfg.iters = int(argv[3])
+    return cfg
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) > 1 and argv[1] == "--self-test":
         _self_test()
-        sys.exit(0)
-    print("loopback robustness script — main loop not yet implemented")
+        return 0
+    cfg = parse_args(argv)
+    print(f"Loopback robustness: port={cfg.port} slave={cfg.slave} iters={cfg.iters}")
+    ser = serial.Serial(cfg.port, cfg.baud, bytesize=8, parity="N",
+                        stopbits=1, timeout=0)
+    try:
+        time.sleep(0.2)  # let the FTDI driver settle
+        print("port opened; main loop not yet implemented")
+        return 0
+    finally:
+        ser.close()
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
