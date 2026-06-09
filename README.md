@@ -131,6 +131,20 @@ for the build commands.
 
 CRC test vectors were verified offline in Python during bring-up.
 
+### Loopback robustness (1000-iter)
+
+With every discrete input wired to a relay output, exercise the full
+write→GPIO→read→GPIO loop 1000 times (= 2000 relay actuations).
+
+```bash
+py -3 tests/run_loopback_robustness.py COM5 <SLAVE_ID> 1000
+```
+
+The script aborts on the first mismatch and force-OFFs the relays on every
+exit path (including Ctrl-C). See
+`docs/superpowers/specs/2026-06-09-modbus-loopback-robustness-design.md`
+for the test design.
+
 ## Known deviations from the design spec
 
 1. **UART init bypasses HAL.** `HAL_UART_Init` does not bring USART3
