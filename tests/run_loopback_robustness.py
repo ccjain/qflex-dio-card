@@ -134,6 +134,32 @@ def per_bit_diff(actual_data: bytes, expected_data: bytes) -> list[int]:
 
 
 # ---------------------------------------------------------------------------
+# Serial I/O transaction helper
+# ---------------------------------------------------------------------------
+def transact(ser: serial.Serial, tx: bytes, want_bytes: int,
+             timeout_s: float) -> tuple[bytes, float]:
+    """Send tx, read up to want_bytes (drain on small bursts), return (rx, ms)."""
+    ser.reset_input_buffer()
+    t0 = time.perf_counter()
+    ser.write(tx)
+    ser.flush()
+    deadline = t0 + timeout_s
+    buf = bytearray()
+    while time.perf_counter() < deadline:
+        n = ser.in_waiting
+        if n:
+            buf.extend(ser.read(n))
+            # extend deadline briefly to drain trailing bytes
+            deadline = time.perf_counter() + 0.02
+        else:
+            time.sleep(0.001)
+        if len(buf) >= want_bytes:
+            break
+    t1 = time.perf_counter()
+    return bytes(buf), (t1 - t0) * 1000.0
+
+
+# ---------------------------------------------------------------------------
 # Configuration and CLI parsing
 # ---------------------------------------------------------------------------
 @dataclass
@@ -167,7 +193,39 @@ def main(argv: list[str]) -> int:
                         stopbits=1, timeout=0)
     try:
         time.sleep(0.2)  # let the FTDI driver settle
-        print("port opened; main loop not yet implemented")
+        frames = build_frames(cfg.slave)
+
+        # ---- ON half ----
+        rx, wms = transact(ser, frames["write_on"],
+                           want_bytes=len(frames["write_echo"]),
+                           timeout_s=cfg.resp_timeout)
+        print(f"write_on   wms={wms:6.2f}  rx={rx.hex(' ').upper()}")
+        assert classify(rx, frames["write_echo"]) == "ok", "write_on echo bad"
+
+        time.sleep(cfg.settle_ms / 1000.0)
+
+        rx, rms = transact(ser, frames["read_req"],
+                           want_bytes=len(frames["read_high"]),
+                           timeout_s=cfg.resp_timeout)
+        print(f"read_high  rms={rms:6.2f}  rx={rx.hex(' ').upper()}")
+        assert classify(rx, frames["read_high"]) == "ok", "read_high mismatch"
+
+        # ---- OFF half ----
+        rx, wms = transact(ser, frames["write_off"],
+                           want_bytes=len(frames["write_echo"]),
+                           timeout_s=cfg.resp_timeout)
+        print(f"write_off  wms={wms:6.2f}  rx={rx.hex(' ').upper()}")
+        assert classify(rx, frames["write_echo"]) == "ok", "write_off echo bad"
+
+        time.sleep(cfg.settle_ms / 1000.0)
+
+        rx, rms = transact(ser, frames["read_req"],
+                           want_bytes=len(frames["read_low"]),
+                           timeout_s=cfg.resp_timeout)
+        print(f"read_low   rms={rms:6.2f}  rx={rx.hex(' ').upper()}")
+        assert classify(rx, frames["read_low"]) == "ok", "read_low mismatch"
+
+        print("\nsingle iteration OK")
         return 0
     finally:
         ser.close()
