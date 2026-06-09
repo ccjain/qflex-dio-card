@@ -113,12 +113,16 @@ def main(argv: list[str] | None = None) -> int:
     try:
         ser = serial.Serial(args.port, BAUD, bytesize=8, parity="N",
                             stopbits=1, timeout=0)
-    except serial.SerialException as e:
+    except (serial.SerialException, OSError, ValueError) as e:
         print(f"cannot open {args.port}: {e}", file=sys.stderr)
         return 1
 
     try:
-        rx = send_and_read(ser, tx)
+        try:
+            rx = send_and_read(ser, tx)
+        except (serial.SerialException, OSError) as e:
+            print(f"serial I/O error on {args.port}: {e}", file=sys.stderr)
+            return 1
     finally:
         ser.close()
 
