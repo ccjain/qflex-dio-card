@@ -159,6 +159,24 @@ def transact(ser: serial.Serial, tx: bytes, want_bytes: int,
     return bytes(buf), (t1 - t0) * 1000.0
 
 
+def force_relays_off(ser: serial.Serial, frames: dict[str, bytes]) -> None:
+    """Best-effort: turn all relays off. Used as cleanup on every exit path.
+
+    Errors are logged but not raised — we are already exiting and a stuck
+    relay should not become a Python traceback.
+    """
+    try:
+        rx, _ = transact(ser, frames["write_off"],
+                         want_bytes=len(frames["write_echo"]),
+                         timeout_s=0.3)
+        if classify(rx, frames["write_echo"]) == "ok":
+            print("cleanup: relays forced OFF")
+        else:
+            print(f"cleanup: relays-off echo not OK ({rx.hex(' ').upper()})")
+    except Exception as e:
+        print(f"cleanup: relays-off raised {type(e).__name__}: {e}")
+
+
 # ---------------------------------------------------------------------------
 # Configuration and CLI parsing
 # ---------------------------------------------------------------------------
@@ -249,17 +267,24 @@ def main(argv: list[str]) -> int:
     print(f"Loopback robustness: port={cfg.port} slave={cfg.slave} iters={cfg.iters}")
     ser = serial.Serial(cfg.port, cfg.baud, bytesize=8, parity="N",
                         stopbits=1, timeout=0)
+    frames = build_frames(cfg.slave)
     try:
         time.sleep(0.2)  # let the FTDI driver settle
-        frames = build_frames(cfg.slave)
-        result = run_loop(ser, cfg, frames)
+        try:
+            result = run_loop(ser, cfg, frames)
+        except KeyboardInterrupt:
+            print("\ninterrupted by user — running cleanup")
+            force_relays_off(ser, frames)
+            return 130   # conventional exit code for SIGINT
         if result.failure:
             print(f"FAIL at iter {result.failure['iter']} "
                   f"{result.failure['half']}-half {result.failure['phase']}: "
                   f"cat={result.failure['cat']}")
             print(f"  expected: {result.failure['expected'].hex(' ').upper()}")
             print(f"  actual  : {result.failure['rx'].hex(' ').upper()}")
+            force_relays_off(ser, frames)
             return 1
+        force_relays_off(ser, frames)
         print(f"PASS: {result.iters_completed} iters completed")
         return 0
     finally:
