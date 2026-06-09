@@ -183,6 +183,64 @@ def parse_args(argv: list[str]) -> PortConfig:
     return cfg
 
 
+# ---------------------------------------------------------------------------
+# Main loop with strict abort and latency capture
+# ---------------------------------------------------------------------------
+@dataclass
+class RunResult:
+    iters_completed: int = 0
+    write_ms: list[float] = field(default_factory=list)
+    read_ms: list[float] = field(default_factory=list)
+    failure: dict | None = None    # populated on abort
+
+
+def _do_half(ser: serial.Serial, cfg: PortConfig, frames: dict[str, bytes],
+             *, on: bool, result: RunResult, iter_idx: int) -> bool:
+    """Run one half (ON or OFF). Returns True on success, False on abort."""
+    write_key  = "write_on"  if on else "write_off"
+    read_key   = "read_high" if on else "read_low"
+    half_label = "ON" if on else "OFF"
+
+    # Write
+    rx_w, wms = transact(ser, frames[write_key],
+                         want_bytes=len(frames["write_echo"]),
+                         timeout_s=cfg.resp_timeout)
+    cat = classify(rx_w, frames["write_echo"])
+    if cat != "ok":
+        result.failure = {"iter": iter_idx, "half": half_label,
+                          "phase": "write", "cat": cat, "rx": rx_w,
+                          "expected": frames["write_echo"]}
+        return False
+    result.write_ms.append(wms)
+
+    time.sleep(cfg.settle_ms / 1000.0)
+
+    # Read
+    rx_r, rms = transact(ser, frames["read_req"],
+                         want_bytes=len(frames[read_key]),
+                         timeout_s=cfg.resp_timeout)
+    cat = classify(rx_r, frames[read_key])
+    if cat != "ok":
+        result.failure = {"iter": iter_idx, "half": half_label,
+                          "phase": "read", "cat": cat, "rx": rx_r,
+                          "expected": frames[read_key]}
+        return False
+    result.read_ms.append(rms)
+    return True
+
+
+def run_loop(ser: serial.Serial, cfg: PortConfig,
+             frames: dict[str, bytes]) -> RunResult:
+    result = RunResult()
+    for i in range(cfg.iters):
+        if not _do_half(ser, cfg, frames, on=True,  result=result, iter_idx=i):
+            return result
+        if not _do_half(ser, cfg, frames, on=False, result=result, iter_idx=i):
+            return result
+        result.iters_completed = i + 1
+    return result
+
+
 def main(argv: list[str]) -> int:
     if len(argv) > 1 and argv[1] == "--self-test":
         _self_test()
@@ -194,38 +252,15 @@ def main(argv: list[str]) -> int:
     try:
         time.sleep(0.2)  # let the FTDI driver settle
         frames = build_frames(cfg.slave)
-
-        # ---- ON half ----
-        rx, wms = transact(ser, frames["write_on"],
-                           want_bytes=len(frames["write_echo"]),
-                           timeout_s=cfg.resp_timeout)
-        print(f"write_on   wms={wms:6.2f}  rx={rx.hex(' ').upper()}")
-        assert classify(rx, frames["write_echo"]) == "ok", "write_on echo bad"
-
-        time.sleep(cfg.settle_ms / 1000.0)
-
-        rx, rms = transact(ser, frames["read_req"],
-                           want_bytes=len(frames["read_high"]),
-                           timeout_s=cfg.resp_timeout)
-        print(f"read_high  rms={rms:6.2f}  rx={rx.hex(' ').upper()}")
-        assert classify(rx, frames["read_high"]) == "ok", "read_high mismatch"
-
-        # ---- OFF half ----
-        rx, wms = transact(ser, frames["write_off"],
-                           want_bytes=len(frames["write_echo"]),
-                           timeout_s=cfg.resp_timeout)
-        print(f"write_off  wms={wms:6.2f}  rx={rx.hex(' ').upper()}")
-        assert classify(rx, frames["write_echo"]) == "ok", "write_off echo bad"
-
-        time.sleep(cfg.settle_ms / 1000.0)
-
-        rx, rms = transact(ser, frames["read_req"],
-                           want_bytes=len(frames["read_low"]),
-                           timeout_s=cfg.resp_timeout)
-        print(f"read_low   rms={rms:6.2f}  rx={rx.hex(' ').upper()}")
-        assert classify(rx, frames["read_low"]) == "ok", "read_low mismatch"
-
-        print("\nsingle iteration OK")
+        result = run_loop(ser, cfg, frames)
+        if result.failure:
+            print(f"FAIL at iter {result.failure['iter']} "
+                  f"{result.failure['half']}-half {result.failure['phase']}: "
+                  f"cat={result.failure['cat']}")
+            print(f"  expected: {result.failure['expected'].hex(' ').upper()}")
+            print(f"  actual  : {result.failure['rx'].hex(' ').upper()}")
+            return 1
+        print(f"PASS: {result.iters_completed} iters completed")
         return 0
     finally:
         ser.close()
