@@ -21,5 +21,10 @@ build/
 Thumbs.db
 .DS_Store
 
+# Python bytecode (host-side test scripts)
+__pycache__/
+*.pyc
+*.pyo
+
 # Local-only env overrides
 env.local.bat

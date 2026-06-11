@@ -103,25 +103,117 @@ docs/superpowers/
   plans/                     # task-by-task implementation plan
 tests/
   mbpoll_smoke.md            # PC-side smoke tests (raw frames + mbpoll cmds)
+  _scan_slaves.py            # FC01 sweep of slave IDs 1..15 (device discovery)
+  relay.py                   # single-relay FC05 CLI (CI-friendly exit codes)
+  run_bench_smoke.py         # replays mbpoll_smoke.md frames, checks responses
+  run_loopback_robustness.py # write/read soak via physical FB<->R loopback
   host/                      # host-compiled C tests (CRC, RTU, dip_decode, debounce)
 ```
 
 ## Testing
 
-### Live bench tests
-See `tests/mbpoll_smoke.md`. Quick PowerShell one-liner against COM4 and slave 1:
+Four host-side test scripts live in `tests/` (Python 3 + `pyserial`).
+They all drive the DIO Card over a **USB-RS485 adapter** — no ST-Link is
+required for any of them. Defaults assume `COM5`; slave ID default
+varies per script (noted below).
+
+Install the one dependency once:
 
 ```powershell
-$p = New-Object System.IO.Ports.SerialPort 'COM4',9600,'None',8,'One'
-$p.Open(); $p.DiscardInBuffer()
-# Read 7 coils:
-$p.Write([byte[]]@(0x01,0x01,0x00,0x00,0x00,0x07,0x7D,0xC8),0,8)
-Start-Sleep -Milliseconds 200
-while ($p.BytesToRead -gt 0) { '{0:X2}' -f $p.ReadByte() }
-$p.Close()
+py -3 -m pip install pyserial
 ```
 
+| # | Script | Purpose | Hardware needed |
+|---|---|---|---|
+| 1 | `_scan_slaves.py` | Discover the device's current slave ID | USB-RS485 only |
+| 2 | `relay.py` | Toggle one relay (FC05); CI-friendly exit codes | USB-RS485 only |
+| 3 | `run_bench_smoke.py` | Replay all 13 raw frames from `mbpoll_smoke.md` and verify responses | USB-RS485 only |
+| 4 | `run_loopback_robustness.py` | Soak: write all relays / read all inputs through a physical loopback | USB-RS485 **+ inputs wired to relay outputs** |
+
+### 1. Slave-ID scanner (`_scan_slaves.py`)
+
+Probe every slave ID 1..15 with FC01. Run this first if you don't know
+what the DIP switch is set to.
+
+```powershell
+py -3 tests\_scan_slaves.py [COM_PORT]
+```
+
+Sample output:
+
+```
+Scanning slave IDs 1..15 on COM5 @ 9600 8N1 ...
+  slave  1: RX 01 01 01 00 51 88
+scan complete
+```
+
+### 2. Single-relay control (`relay.py`)
+
+One-shot toggle of a single relay over FC05. Useful for manual checks or
+chaining in shell scripts — exits non-zero on any failure.
+
+```powershell
+py -3 tests\relay.py <relay 1-7> <on|off> [--port COM5] [--slave 1]
+```
+
+Exit codes:
+- `0` — success (FC05 echo matched request)
+- `1` — operational failure (port unavailable, no reply, wrong echo)
+- `2` — usage error (bad args)
+
+### 3. Bench smoke suite (`run_bench_smoke.py`)
+
+Replays all 13 raw frames from `tests/mbpoll_smoke.md` against the device
+and checks each response against the documented expected bytes. Covers
+read paths, write paths (audible relay clicks), exception responses, and
+the wrong-slave silent-drop case.
+
+```powershell
+py -3 tests\run_bench_smoke.py [COM_PORT] [SLAVE_ID]
+```
+
+Defaults: `COM5`, slave `8`. Pass criterion: every frame produces its
+expected response (or expected timeout) with no Python exceptions.
+
+### 4. Loopback robustness (`run_loopback_robustness.py`)
+
+Long-running soak that exercises the full
+write→relay GPIO→loopback wire→input GPIO→read chain. **Requires the
+bench wiring**: all 12 discrete inputs FB1..FB12 physically tied to the 7
+relay outputs R1..R7, so flipping any relay drives a matching input bit.
+
+Each iteration:
+
+1. Writes all relays ON (FC0F coils 0..6 = 1), settles 100 ms, reads all
+   12 inputs (FC02) and asserts the data bytes are `FF 0F`.
+2. Writes all relays OFF, settles 100 ms, reads inputs and asserts `00 00`.
+
+The first mismatch aborts with a per-bit diff naming the failing input(s)
+(e.g. `mismatched bits: FB3`). Relays are force-OFFed on every exit path,
+including Ctrl-C.
+
+```powershell
+# Self-test (no hardware): verifies CRC vectors + classifier behaviour.
+py -3 tests\run_loopback_robustness.py --self-test
+
+# Live run: COM5, slave 1, 1000 iterations (~5 min).
+py -3 tests\run_loopback_robustness.py COM5 1 1000
+```
+
+Per-iteration log line (one per cycle, both halves shown):
+
+```
+  iter     1/10 | ON  inputs=FF 0F (12/12 high) | OFF inputs=00 00 ( 0/12 high) | w=32.10ms r=27.50ms
+```
+
+End-of-run summary reports write and read latency
+(min / mean / max / p95 / p99) plus the actuation count.
+
+See `docs/superpowers/specs/2026-06-09-modbus-loopback-robustness-design.md`
+for the full test design.
+
 ### Host-side unit tests
+
 `tests/host/` contains C tests for the pure-logic functions
 (`mb_rtu_crc16`, `mb_rtu_process`, `dip_decode`, `feedback_debounce_*`).
 A host C compiler is required (MinGW-w64 or MSVC) — not currently on
@@ -131,19 +223,20 @@ for the build commands.
 
 CRC test vectors were verified offline in Python during bring-up.
 
-### Loopback robustness (1000-iter)
+### Ad-hoc PowerShell ping
 
-With every discrete input wired to a relay output, exercise the full
-write→GPIO→read→GPIO loop 1000 times (= 2000 relay actuations).
+Zero dependencies — useful for confirming the port works before installing
+anything:
 
-```bash
-py -3 tests/run_loopback_robustness.py COM5 <SLAVE_ID> 1000
+```powershell
+$p = New-Object System.IO.Ports.SerialPort 'COM5',9600,'None',8,'One'
+$p.Open(); $p.DiscardInBuffer()
+# Read 7 coils from slave 1:
+$p.Write([byte[]]@(0x01,0x01,0x00,0x00,0x00,0x07,0x7D,0xC8),0,8)
+Start-Sleep -Milliseconds 200
+while ($p.BytesToRead -gt 0) { '{0:X2}' -f $p.ReadByte() }
+$p.Close()
 ```
-
-The script aborts on the first mismatch and force-OFFs the relays on every
-exit path (including Ctrl-C). See
-`docs/superpowers/specs/2026-06-09-modbus-loopback-robustness-design.md`
-for the test design.
 
 ## Known deviations from the design spec
 

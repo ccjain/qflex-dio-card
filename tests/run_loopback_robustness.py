@@ -133,6 +133,14 @@ def per_bit_diff(actual_data: bytes, expected_data: bytes) -> list[int]:
     return [i for i in range(12) if (diff >> i) & 1]
 
 
+def count_high_inputs(data: bytes) -> int:
+    """Count high bits among the 12 discrete inputs in a FC02 data payload."""
+    if len(data) < 2:
+        return 0
+    val = (data[0] | (data[1] << 8)) & 0x0FFF
+    return bin(val).count("1")
+
+
 # ---------------------------------------------------------------------------
 # Serial I/O transaction helper
 # ---------------------------------------------------------------------------
@@ -213,8 +221,12 @@ class RunResult:
 
 
 def _do_half(ser: serial.Serial, cfg: PortConfig, frames: dict[str, bytes],
-             *, on: bool, result: RunResult, iter_idx: int) -> bool:
-    """Run one half (ON or OFF). Returns True on success, False on abort."""
+             *, on: bool, result: RunResult, iter_idx: int) -> tuple[bool, bytes]:
+    """Run one half (ON or OFF). Returns (ok, input_data_bytes).
+
+    input_data_bytes is the 2-byte FC02 data payload (12 inputs packed
+    little-endian) on success, or b"" on abort.
+    """
     write_key  = "write_on"  if on else "write_off"
     read_key   = "read_high" if on else "read_low"
     half_label = "ON" if on else "OFF"
@@ -228,7 +240,7 @@ def _do_half(ser: serial.Serial, cfg: PortConfig, frames: dict[str, bytes],
         result.failure = {"iter": iter_idx, "half": half_label,
                           "phase": "write", "cat": cat, "rx": rx_w,
                           "expected": frames["write_echo"]}
-        return False
+        return False, b""
     result.write_ms.append(wms)
 
     time.sleep(cfg.settle_ms / 1000.0)
@@ -242,9 +254,9 @@ def _do_half(ser: serial.Serial, cfg: PortConfig, frames: dict[str, bytes],
         result.failure = {"iter": iter_idx, "half": half_label,
                           "phase": "read", "cat": cat, "rx": rx_r,
                           "expected": frames[read_key]}
-        return False
+        return False, b""
     result.read_ms.append(rms)
-    return True
+    return True, rx_r[3:-2]
 
 
 def _percentile(xs: list[float], p: float) -> float:
@@ -275,19 +287,26 @@ def run_loop(ser: serial.Serial, cfg: PortConfig,
     result = RunResult()
     t_start = time.perf_counter()
     for i in range(cfg.iters):
-        if not _do_half(ser, cfg, frames, on=True,  result=result, iter_idx=i):
+        ok, on_data = _do_half(ser, cfg, frames, on=True,
+                               result=result, iter_idx=i)
+        if not ok:
             return result
-        if not _do_half(ser, cfg, frames, on=False, result=result, iter_idx=i):
+        ok, off_data = _do_half(ser, cfg, frames, on=False,
+                                result=result, iter_idx=i)
+        if not ok:
             return result
         result.iters_completed = i + 1
-        if (i + 1) % 10 == 0 or (i + 1) == cfg.iters:
-            last_w = result.write_ms[-1] if result.write_ms else 0
-            last_r = result.read_ms[-1]  if result.read_ms  else 0
-            print(f"  iter {i+1:>5}/{cfg.iters} | ok | "
-                  f"last write={last_w:5.2f}ms read={last_r:5.2f}ms",
-                  end="\r")
+        on_hex  = on_data.hex(" ").upper()
+        off_hex = off_data.hex(" ").upper()
+        on_cnt  = count_high_inputs(on_data)
+        off_cnt = count_high_inputs(off_data)
+        last_w = result.write_ms[-1] if result.write_ms else 0
+        last_r = result.read_ms[-1]  if result.read_ms  else 0
+        print(f"  iter {i+1:>5}/{cfg.iters} | "
+              f"ON  inputs={on_hex} ({on_cnt:>2}/12 high) | "
+              f"OFF inputs={off_hex} ({off_cnt:>2}/12 high) | "
+              f"w={last_w:5.2f}ms r={last_r:5.2f}ms")
     elapsed = time.perf_counter() - t_start
-    print()  # newline after the \r-overwritten progress line
     print(f"  total runtime: {elapsed:.1f}s")
     return result
 

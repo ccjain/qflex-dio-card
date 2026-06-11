@@ -11,7 +11,7 @@
 #define PIN_HEARTBEAT_CLK_EN() __HAL_RCC_GPIOF_CLK_ENABLE()
 
 /* ------------------------------------------------------------------
- * Relays (active-low, 7 channels). Indexed 0..6 to match coil addresses.
+ * Relays (active-high, 7 channels). Indexed 0..6 to match coil addresses.
  * ----------------------------------------------------------------*/
 typedef struct {
     GPIO_TypeDef *port;
@@ -32,9 +32,9 @@ typedef struct {
     __HAL_RCC_GPIOC_CLK_ENABLE(); \
 } while (0)
 
-/* Active-low: LOW energises the coil. */
-#define RELAY_ON_STATE   GPIO_PIN_RESET
-#define RELAY_OFF_STATE  GPIO_PIN_SET
+/* Active-high: HIGH energises the coil. */
+#define RELAY_ON_STATE   GPIO_PIN_SET
+#define RELAY_OFF_STATE  GPIO_PIN_RESET
 
 /* ------------------------------------------------------------------
  * Feedback inputs (active-low w/ pull-up, 12 channels)
